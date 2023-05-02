@@ -79,8 +79,24 @@ Table Shippers {
   Phone TEXT
 }
 
+Table Suppliers {
+  SupplierID INTEGER [PRIMARY KEY]
+  CompanyName TEXT
+  ContactName TEXT
+  ContactTitle TEXT
+  Address TEXT
+  City TEXT
+  Region TEXT
+  PostalCode TEXT
+  Country TEXT
+  Phone TEXT
+  Fax TEXT
+  HomePage TEXT
+}
+
 Ref: OrderDetails.OrderID > Orders.OrderID
 Ref: OrderDetails.ProductID > Products.ProductID
 Ref: Orders.EmployeeID > Employees.EmployeeID
 Ref: Orders.CustomerID > Customers.CustomerID
 Ref: Orders.ShipVia > Shippers.ShipperID
+Ref: Products.SupplierID > Suppliers.SupplierID
