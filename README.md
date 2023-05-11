@@ -23,7 +23,7 @@ Class diagram 1. OrderRepository class.
 ![OrderRepository](images/order-repository.png)
 
 The `OrderRepository` class provides methods for searching and returning order data, as well as methods for managing orders.
-* [GetOrdersAsync](Northwind.Services/Repositories/IOrderRepository.cs#L15) returns a list of orders from a repository. The `skip` method parameter specifies the number of orders to skip before adding an order to the result list. The `count` method parameter specified the number of orders to return. The result list should be sorted by order ID, from smallest to largest.
+* [GetOrdersAsync](Northwind.Services/Repositories/IOrderRepository.cs#L15) returns a list of orders from a repository. The `skip` method parameter specifies the number of orders to skip before adding an order to the result list. The `count` method parameter specifies the number of orders to return. The result list should be sorted by order ID, from smallest to largest.
 * [GetOrderAsync](Northwind.Services/Repositories/IOrderRepository.cs#L22) returns an order with the specified identifier.
 * [AddOrderAsync](Northwind.Services/Repositories/IOrderRepository.cs#L30) adds a new order to the repository as well as order details.
 * [RemoveOrderAsync](Northwind.Services/Repositories/IOrderRepository.cs#L37) removes an order with the specified identifier as well as the order details.
