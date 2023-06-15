@@ -9,7 +9,7 @@ To successfully complete the task, you must have the following skills:
 * You should be familiar with [ADO.NET](https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview) basics.
 * You should be familiar with [SQL](https://en.wikipedia.org/wiki/SQL) basics (DML commands).
 
-Estimated time to complete the task: 2 hours.
+Estimated time to complete the task: 6 hours.
 
 The task requires [.NET 6 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) to be installed.
 
