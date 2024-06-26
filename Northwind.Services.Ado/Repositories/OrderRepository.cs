@@ -80,47 +80,7 @@ namespace Northwind.Services.Ado.Repositories
                 throw new ArgumentOutOfRangeException(nameof(count), "Skip or count parameters are out of range.");
             }
 
-            var orders = new List<Order>();
-
-            await this.context.OpenAsync();
-            var command = this.context.CreateCommand();
-            command.CommandText = "SELECT * FROM Orders ORDER BY OrderID LIMIT @Count OFFSET @Skip";
-            command.Parameters.Add(CreateParameter(command, "@Count", count));
-            command.Parameters.Add(CreateParameter(command, "@Skip", skip));
-
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                {
-                    var orderId = reader.GetInt64(reader.GetOrdinal("OrderID"));
-                    var order = new Order(orderId)
-                    {
-                        OrderDate = reader.GetDateTime(reader.GetOrdinal("OrderDate")),
-                        RequiredDate = reader.GetDateTime(reader.GetOrdinal("RequiredDate")),
-                        ShippedDate = reader.GetDateTime(reader.GetOrdinal("ShippedDate")),
-                        Freight = reader.GetDouble(reader.GetOrdinal("Freight")),
-                        ShipName = reader.GetString(reader.GetOrdinal("ShipName")),
-                        ShippingAddress = new ShippingAddress(
-                            reader.GetString(reader.GetOrdinal("ShipAddress")),
-                            reader.GetString(reader.GetOrdinal("ShipCity")),
-                            reader.IsDBNull(reader.GetOrdinal("ShipRegion")) ? null : reader.GetString(reader.GetOrdinal("ShipRegion")),
-                            reader.GetString(reader.GetOrdinal("ShipPostalCode")),
-                            reader.GetString(reader.GetOrdinal("ShipCountry"))),
-                        Customer = new Customer(new CustomerCode(reader.GetString(reader.GetOrdinal("CustomerID"))))
-                        {
-                            CompanyName = await this.GetCustomerCompanyNameAsync(reader.GetString(reader.GetOrdinal("CustomerID"))) ?? "Default Company Name",
-                        },
-                        Employee = await this.GetEmployeeAsync(reader.GetInt64(reader.GetOrdinal("EmployeeID"))),
-                        Shipper = await this.GetShipperAsync(reader.GetInt64(reader.GetOrdinal("ShipVia"))),
-                    };
-
-                    await this.GetOrderDetailsAsync(order);
-                    orders.Add(order);
-                }
-            }
-
-            await this.context.CloseAsync();
-            return orders;
+            return await this.GetOrdersInternalAsync(skip, count);
         }
 
         public async Task RemoveOrderAsync(long orderId)
@@ -163,6 +123,27 @@ namespace Northwind.Services.Ado.Repositories
                 throw new ArgumentNullException(nameof(order));
             }
 
+            await this.CheckAndUpdateOrderAsync(order);
+        }
+
+        private static void ValidateOrder(Order order)
+        {
+            if (order == null)
+            {
+                throw new ArgumentNullException(nameof(order));
+            }
+        }
+
+        private static DbParameter CreateParameter(DbCommand command, string name, object? value)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value ?? DBNull.Value;
+            return parameter;
+        }
+
+        private async Task CheckAndUpdateOrderAsync(Order order)
+        {
             await this.context.OpenAsync();
             var sqlTran = await this.context.BeginTransactionAsync();
             var command = this.context.CreateCommand();
@@ -216,22 +197,6 @@ namespace Northwind.Services.Ado.Repositories
                 await this.context.CloseAsync();
                 throw new RepositoryException(ex.Message, ex);
             }
-        }
-
-        private static void ValidateOrder(Order order)
-        {
-            if (order == null)
-            {
-                throw new ArgumentNullException(nameof(order));
-            }
-        }
-
-        private static DbParameter CreateParameter(DbCommand command, string name, object? value)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = name;
-            parameter.Value = value ?? DBNull.Value;
-            return parameter;
         }
 
         private async Task<long> AddOrderInternalAsync(Order order)
@@ -291,6 +256,51 @@ namespace Northwind.Services.Ado.Repositories
                 await this.context.CloseAsync();
                 throw new RepositoryException(ex.Message, ex);
             }
+        }
+
+        private async Task<IList<Order>> GetOrdersInternalAsync(int skip, int count)
+        {
+            var orders = new List<Order>();
+
+            await this.context.OpenAsync();
+            var command = this.context.CreateCommand();
+            command.CommandText = "SELECT * FROM Orders ORDER BY OrderID LIMIT @Count OFFSET @Skip";
+            command.Parameters.Add(CreateParameter(command, "@Count", count));
+            command.Parameters.Add(CreateParameter(command, "@Skip", skip));
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var orderId = reader.GetInt64(reader.GetOrdinal("OrderID"));
+                    var order = new Order(orderId)
+                    {
+                        OrderDate = reader.GetDateTime(reader.GetOrdinal("OrderDate")),
+                        RequiredDate = reader.GetDateTime(reader.GetOrdinal("RequiredDate")),
+                        ShippedDate = reader.GetDateTime(reader.GetOrdinal("ShippedDate")),
+                        Freight = reader.GetDouble(reader.GetOrdinal("Freight")),
+                        ShipName = reader.GetString(reader.GetOrdinal("ShipName")),
+                        ShippingAddress = new ShippingAddress(
+                            reader.GetString(reader.GetOrdinal("ShipAddress")),
+                            reader.GetString(reader.GetOrdinal("ShipCity")),
+                            reader.IsDBNull(reader.GetOrdinal("ShipRegion")) ? null : reader.GetString(reader.GetOrdinal("ShipRegion")),
+                            reader.GetString(reader.GetOrdinal("ShipPostalCode")),
+                            reader.GetString(reader.GetOrdinal("ShipCountry"))),
+                        Customer = new Customer(new CustomerCode(reader.GetString(reader.GetOrdinal("CustomerID"))))
+                        {
+                            CompanyName = await this.GetCustomerCompanyNameAsync(reader.GetString(reader.GetOrdinal("CustomerID"))) ?? "Default Company Name",
+                        },
+                        Employee = await this.GetEmployeeAsync(reader.GetInt64(reader.GetOrdinal("EmployeeID"))),
+                        Shipper = await this.GetShipperAsync(reader.GetInt64(reader.GetOrdinal("ShipVia"))),
+                    };
+
+                    await this.GetOrderDetailsAsync(order);
+                    orders.Add(order);
+                }
+            }
+
+            await this.context.CloseAsync();
+            return orders;
         }
 
         private async Task<string?> GetCustomerCompanyNameAsync(string customerId)
