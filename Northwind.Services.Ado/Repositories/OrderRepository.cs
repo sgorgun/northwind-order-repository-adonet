@@ -21,65 +21,8 @@ namespace Northwind.Services.Ado.Repositories
 
         public async Task<long> AddOrderAsync(Order order)
         {
-            if (order == null)
-            {
-                throw new ArgumentNullException(nameof(order));
-            }
-
-            await this.context.OpenAsync();
-            var sqlTran = await this.context.BeginTransactionAsync();
-            var command = this.context.CreateCommand();
-            command.Transaction = sqlTran;
-
-            try
-            {
-                // Add Order
-                command.CommandText = "INSERT INTO Orders (CustomerID, EmployeeID, OrderDate, RequiredDate, ShippedDate, ShipVia, Freight, ShipName, " +
-                "ShipAddress, ShipCity, ShipRegion, ShipPostalCode, ShipCountry) VALUES (@CustomerID, @EmployeeID, @OrderDate, @RequiredDate, @ShippedDate, " +
-                "@ShipVia, @Freight, @ShipName, @ShipAddress, @ShipCity, @ShipRegion, @ShipPostalCode, @ShipCountry)";
-                command.Parameters.Add(CreateParameter(command, "@CustomerID", order.Customer.Code.Code));
-                command.Parameters.Add(CreateParameter(command, "@EmployeeID", order.Employee.Id));
-                command.Parameters.Add(CreateParameter(command, "@OrderDate", order.OrderDate));
-                command.Parameters.Add(CreateParameter(command, "@RequiredDate", order.RequiredDate));
-                command.Parameters.Add(CreateParameter(command, "@ShippedDate", order.ShippedDate));
-                command.Parameters.Add(CreateParameter(command, "@ShipVia", order.Shipper.Id));
-                command.Parameters.Add(CreateParameter(command, "@Freight", order.Freight));
-                command.Parameters.Add(CreateParameter(command, "@ShipName", order.ShipName));
-                command.Parameters.Add(CreateParameter(command, "@ShipAddress", order.ShippingAddress.Address.Replace("'", "`", StringComparison.Ordinal)));
-                command.Parameters.Add(CreateParameter(command, "@ShipCity", order.ShippingAddress.City));
-                command.Parameters.Add(CreateParameter(command, "@ShipRegion", order.ShippingAddress.Region));
-                command.Parameters.Add(CreateParameter(command, "@ShipPostalCode", order.ShippingAddress.PostalCode));
-                command.Parameters.Add(CreateParameter(command, "@ShipCountry", order.ShippingAddress.Country));
-                await command.ExecuteNonQueryAsync();
-
-                // Get the OrderID of the newly inserted order
-                command.CommandText = "SELECT last_insert_rowid()";
-                var orderId = (long)await command.ExecuteScalarAsync();
-
-                // Add OrderDetails
-                foreach (var orderDetail in order.OrderDetails)
-                {
-                    // Add OrderDetail
-                    command.CommandText = "INSERT INTO OrderDetails (OrderID, ProductID, UnitPrice, Quantity, Discount) VALUES (@OrderID, @ProductID, @UnitPrice, @Quantity, @Discount)";
-                    command.Parameters.Clear();
-                    command.Parameters.Add(CreateParameter(command, "@OrderID", orderId));
-                    command.Parameters.Add(CreateParameter(command, "@ProductID", orderDetail.Product.Id));
-                    command.Parameters.Add(CreateParameter(command, "@UnitPrice", orderDetail.UnitPrice));
-                    command.Parameters.Add(CreateParameter(command, "@Quantity", orderDetail.Quantity));
-                    command.Parameters.Add(CreateParameter(command, "@Discount", orderDetail.Discount));
-                    await command.ExecuteNonQueryAsync();
-                }
-
-                await sqlTran.CommitAsync();
-                await this.context.CloseAsync();
-                return orderId;
-            }
-            catch (Exception ex)
-            {
-                await sqlTran.RollbackAsync();
-                await this.context.CloseAsync();
-                throw new RepositoryException(ex.Message, ex);
-            }
+            ValidateOrder(order);
+            return await this.AddOrderInternalAsync(order);
         }
 
         public async Task<Order> GetOrderAsync(long orderId)
@@ -111,10 +54,10 @@ namespace Northwind.Services.Ado.Repositories
 
                         Customer = new Customer(new CustomerCode(reader.GetString(reader.GetOrdinal("CustomerID"))))
                         {
-                            CompanyName = await GetCustomerCompanyNameAsync(reader.GetString(reader.GetOrdinal("CustomerID")))
+                            CompanyName = await this.GetCustomerCompanyNameAsync(reader.GetString(reader.GetOrdinal("CustomerID"))) ?? "Default Company Name",
                         },
-                        Employee = await GetEmployeeAsync(reader.GetInt64(reader.GetOrdinal("EmployeeID"))),
-                        Shipper = await GetShipperAsync(reader.GetInt64(reader.GetOrdinal("ShipVia")))
+                        Employee = await this.GetEmployeeAsync(reader.GetInt64(reader.GetOrdinal("EmployeeID"))),
+                        Shipper = await this.GetShipperAsync(reader.GetInt64(reader.GetOrdinal("ShipVia"))),
                     };
                 }
             }
@@ -124,7 +67,7 @@ namespace Northwind.Services.Ado.Repositories
                 throw new RepositoryException($"Order with ID {orderId} not found.");
             }
 
-            await GetOrderDetailsAsync(order);
+            await this.GetOrderDetailsAsync(order);
 
             await this.context.CloseAsync();
             return order;
@@ -165,13 +108,13 @@ namespace Northwind.Services.Ado.Repositories
                             reader.GetString(reader.GetOrdinal("ShipCountry"))),
                         Customer = new Customer(new CustomerCode(reader.GetString(reader.GetOrdinal("CustomerID"))))
                         {
-                            CompanyName = await GetCustomerCompanyNameAsync(reader.GetString(reader.GetOrdinal("CustomerID")))
+                            CompanyName = await this.GetCustomerCompanyNameAsync(reader.GetString(reader.GetOrdinal("CustomerID"))) ?? "Default Company Name",
                         },
-                        Employee = await GetEmployeeAsync(reader.GetInt64(reader.GetOrdinal("EmployeeID"))),
-                        Shipper = await GetShipperAsync(reader.GetInt64(reader.GetOrdinal("ShipVia")))
+                        Employee = await this.GetEmployeeAsync(reader.GetInt64(reader.GetOrdinal("EmployeeID"))),
+                        Shipper = await this.GetShipperAsync(reader.GetInt64(reader.GetOrdinal("ShipVia"))),
                     };
 
-                    await GetOrderDetailsAsync(order);
+                    await this.GetOrderDetailsAsync(order);
                     orders.Add(order);
                 }
             }
@@ -275,6 +218,81 @@ namespace Northwind.Services.Ado.Repositories
             }
         }
 
+        private static void ValidateOrder(Order order)
+        {
+            if (order == null)
+            {
+                throw new ArgumentNullException(nameof(order));
+            }
+        }
+
+        private static DbParameter CreateParameter(DbCommand command, string name, object? value)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value ?? DBNull.Value;
+            return parameter;
+        }
+
+        private async Task<long> AddOrderInternalAsync(Order order)
+        {
+            await this.context.OpenAsync();
+            var sqlTran = await this.context.BeginTransactionAsync();
+            var command = this.context.CreateCommand();
+            command.Transaction = sqlTran;
+
+            try
+            {
+                // Add Order
+                command.CommandText = "INSERT INTO Orders (CustomerID, EmployeeID, OrderDate, RequiredDate, ShippedDate, ShipVia, Freight, ShipName, " +
+                "ShipAddress, ShipCity, ShipRegion, ShipPostalCode, ShipCountry) VALUES (@CustomerID, @EmployeeID, @OrderDate, @RequiredDate, @ShippedDate, " +
+                "@ShipVia, @Freight, @ShipName, @ShipAddress, @ShipCity, @ShipRegion, @ShipPostalCode, @ShipCountry)";
+                command.Parameters.Add(CreateParameter(command, "@CustomerID", order.Customer.Code.Code));
+                command.Parameters.Add(CreateParameter(command, "@EmployeeID", order.Employee.Id));
+                command.Parameters.Add(CreateParameter(command, "@OrderDate", order.OrderDate));
+                command.Parameters.Add(CreateParameter(command, "@RequiredDate", order.RequiredDate));
+                command.Parameters.Add(CreateParameter(command, "@ShippedDate", order.ShippedDate));
+                command.Parameters.Add(CreateParameter(command, "@ShipVia", order.Shipper.Id));
+                command.Parameters.Add(CreateParameter(command, "@Freight", order.Freight));
+                command.Parameters.Add(CreateParameter(command, "@ShipName", order.ShipName));
+                command.Parameters.Add(CreateParameter(command, "@ShipAddress", order.ShippingAddress.Address.Replace("'", "`", StringComparison.Ordinal)));
+                command.Parameters.Add(CreateParameter(command, "@ShipCity", order.ShippingAddress.City));
+                command.Parameters.Add(CreateParameter(command, "@ShipRegion", order.ShippingAddress.Region));
+                command.Parameters.Add(CreateParameter(command, "@ShipPostalCode", order.ShippingAddress.PostalCode));
+                command.Parameters.Add(CreateParameter(command, "@ShipCountry", order.ShippingAddress.Country));
+                await command.ExecuteNonQueryAsync();
+
+                // Get the OrderID of the newly inserted order
+                command.CommandText = "SELECT last_insert_rowid()";
+                var result = await command.ExecuteScalarAsync() ?? throw new RepositoryException("Failed to retrieve the order ID.");
+                var orderId = (long)result;
+
+                // Add OrderDetails
+                foreach (var orderDetail in order.OrderDetails)
+                {
+                    // Add OrderDetail
+                    command.CommandText = "INSERT INTO OrderDetails (OrderID, ProductID, UnitPrice, Quantity, Discount) VALUES (@OrderID, @ProductID, @UnitPrice, @Quantity, @Discount)";
+                    command.Parameters.Clear();
+                    command.Parameters.Add(CreateParameter(command, "@OrderID", orderId));
+                    command.Parameters.Add(CreateParameter(command, "@ProductID", orderDetail.Product.Id));
+                    command.Parameters.Add(CreateParameter(command, "@UnitPrice", orderDetail.UnitPrice));
+                    command.Parameters.Add(CreateParameter(command, "@Quantity", orderDetail.Quantity));
+                    command.Parameters.Add(CreateParameter(command, "@Discount", orderDetail.Discount));
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                await sqlTran.CommitAsync();
+                await this.context.CloseAsync();
+                return orderId;
+            }
+            catch (Exception ex)
+            {
+                await sqlTran.RollbackAsync();
+                await this.context.CloseAsync();
+                throw new RepositoryException(ex.Message, ex);
+            }
+        }
+
         private async Task<string?> GetCustomerCompanyNameAsync(string customerId)
         {
             var command = this.context.CreateCommand();
@@ -296,7 +314,7 @@ namespace Northwind.Services.Ado.Repositories
                 {
                     FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
                     LastName = reader.GetString(reader.GetOrdinal("LastName")),
-                    Country = reader.GetString(reader.GetOrdinal("Country"))
+                    Country = reader.GetString(reader.GetOrdinal("Country")),
                 };
             }
 
@@ -314,7 +332,7 @@ namespace Northwind.Services.Ado.Repositories
             {
                 return new Shipper(shipperId)
                 {
-                    CompanyName = reader.GetString(reader.GetOrdinal("CompanyName"))
+                    CompanyName = reader.GetString(reader.GetOrdinal("CompanyName")),
                 };
             }
 
@@ -331,13 +349,13 @@ namespace Northwind.Services.Ado.Repositories
             while (await reader.ReadAsync())
             {
                 var productId = reader.GetInt64(reader.GetOrdinal("ProductID"));
-                var product = await GetProductAsync(productId);
+                var product = await this.GetProductAsync(productId);
                 order.OrderDetails.Add(new OrderDetail(order)
                 {
                     Product = product,
                     UnitPrice = reader.GetDouble(reader.GetOrdinal("UnitPrice")),
                     Quantity = reader.GetInt32(reader.GetOrdinal("Quantity")),
-                    Discount = reader.GetDouble(reader.GetOrdinal("Discount"))
+                    Discount = reader.GetDouble(reader.GetOrdinal("Discount")),
                 });
             }
         }
@@ -356,8 +374,8 @@ namespace Northwind.Services.Ado.Repositories
                     ProductName = reader.GetString(reader.GetOrdinal("ProductName")),
                     SupplierId = reader.GetInt64(reader.GetOrdinal("SupplierID")),
                     CategoryId = reader.GetInt64(reader.GetOrdinal("CategoryID")),
-                    Supplier = await GetSupplierNameAsync(reader.GetInt64(reader.GetOrdinal("SupplierID"))),
-                    Category = await GetCategoryNameAsync(reader.GetInt64(reader.GetOrdinal("CategoryID")))
+                    Supplier = await this.GetSupplierNameAsync(reader.GetInt64(reader.GetOrdinal("SupplierID"))) ?? "Default Supplier Name",
+                    Category = await this.GetCategoryNameAsync(reader.GetInt64(reader.GetOrdinal("CategoryID"))) ?? "Default Category Name",
                 };
             }
 
@@ -378,14 +396,6 @@ namespace Northwind.Services.Ado.Repositories
             command.CommandText = "SELECT CategoryName FROM Categories WHERE CategoryID = @CategoryID";
             command.Parameters.Add(CreateParameter(command, "@CategoryID", categoryId));
             return (string?)await command.ExecuteScalarAsync();
-        }
-
-        private static DbParameter CreateParameter(DbCommand command, string name, object value)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = name;
-            parameter.Value = value ?? DBNull.Value;
-            return parameter;
         }
     }
 }
