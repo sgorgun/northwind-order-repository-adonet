@@ -75,11 +75,7 @@ namespace Northwind.Services.Ado.Repositories
 
         public async Task<IList<Order>> GetOrdersAsync(int skip, int count)
         {
-            if (skip < 0 || count < 1)
-            {
-                throw new ArgumentOutOfRangeException(nameof(count), "Skip or count parameters are out of range.");
-            }
-
+            CheckParameters(skip, count);
             return await this.GetOrdersInternalAsync(skip, count);
         }
 
@@ -118,11 +114,7 @@ namespace Northwind.Services.Ado.Repositories
 
         public async Task UpdateOrderAsync(Order order)
         {
-            if (order == null)
-            {
-                throw new ArgumentNullException(nameof(order));
-            }
-
+            ValidateOrder(order);
             await this.CheckAndUpdateOrderAsync(order);
         }
 
@@ -131,6 +123,14 @@ namespace Northwind.Services.Ado.Repositories
             if (order == null)
             {
                 throw new ArgumentNullException(nameof(order));
+            }
+        }
+
+        private static void CheckParameters(int skip, int count)
+        {
+            if (skip < 0 || count < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), "Skip or count parameters are out of range.");
             }
         }
 
